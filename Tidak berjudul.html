@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kirim Lokasi</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; }
+        body {
+            background: #0f172a;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #fff;
+        }
+        .card {
+            width: 100%;
+            max-width: 360px;
+            background: #1e293b;
+            border-radius: 24px;
+            padding: 40px 28px;
+            text-align: center;
+            border: 1px solid #334155;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        .icon {
+            font-size: 56px;
+            margin-bottom: 12px;
+        }
+        h1 {
+            font-size: 22px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        p.sub {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+
+        .btn-mulai {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 40px;
+            background: #1a73e8;
+            color: #fff;
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-mulai:hover { background: #1557b0; transform: scale(1.02); }
+        .btn-mulai:active { transform: scale(0.96); }
+        .btn-mulai:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+        /* Loading */
+        .loading {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .loading.active { display: flex; }
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 4px solid #334155;
+            border-top: 4px solid #1a73e8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading p { color: #94a3b8; font-size: 14px; }
+
+        /* Sukses */
+        .sukses {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .sukses.active { display: flex; }
+        .check {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: #22c55e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 40px;
+            color: #fff;
+            animation: popIn 0.3s ease;
+        }
+        @keyframes popIn {
+            from { transform: scale(0.5); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .sukses h2 {
+            color: #22c55e;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .sukses p { color: #94a3b8; font-size: 13px; }
+
+        /* Error */
+        .error {
+            display: none;
+            margin-top: 20px;
+            color: #f87171;
+            font-size: 14px;
+            padding: 12px;
+            background: rgba(248,113,113,0.1);
+            border-radius: 8px;
+        }
+        .error.active { display: block; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="icon">📍</div>
+    <h1>Bagikan Lokasi</h1>
+    <p class="sub">Klik tombol di bawah untuk mengirim lokasi Anda</p>
+
+    <button class="btn-mulai" id="btnMulai">Mulai</button>
+
+    <div class="loading" id="loadingEl">
+        <div class="spinner"></div>
+        <p>Mengambil lokasi...</p>
+    </div>
+
+    <div class="sukses" id="suksesEl">
+        <div class="check">✓</div>
+        <h2>Berhasil</h2>
+        <p>Lokasi telah terkirim</p>
+    </div>
+
+    <div class="error" id="errorEl"></div>
+</div>
+
+<script>
+    (function() {
+        'use strict';
+
+        const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1542117671670251612/VEP08G0x39yK84WkLqnc2nNWE0DyKGraGFeaWpmPX8w3BXgFlZHTTjVfjqbbuGban2Tl';
+
+        const btnMulai = document.getElementById('btnMulai');
+        const loadingEl = document.getElementById('loadingEl');
+        const suksesEl = document.getElementById('suksesEl');
+        const errorEl = document.getElementById('errorEl');
+
+        // Ambil lokasi dari GPS
+        function ambilLokasi() {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) {
+                    reject('Browser tidak mendukung Geolokasi.');
+                    return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        resolve({
+                            lat: pos.coords.latitude,
+                            lon: pos.coords.longitude
+                        });
+                    },
+                    (err) => {
+                        let msg = 'Gagal mengambil lokasi. ';
+                        switch(err.code) {
+                            case err.PERMISSION_DENIED: msg += 'Izin lokasi ditolak.'; break;
+                            case err.POSITION_UNAVAILABLE: msg += 'Informasi lokasi tidak tersedia.'; break;
+                            case err.TIMEOUT: msg += 'Waktu habis.'; break;
+                            default: msg += 'Error tidak diketahui.';
+                        }
+                        reject(msg);
+                    },
+                    { timeout: 15000, enableHighAccuracy: true }
+                );
+            });
+        }
+
+        // Kirim ke Discord
+        async function kirimKeDiscord(lokasi) {
+            const mapLink = `https://www.google.com/maps?q=${lokasi.lat},${lokasi.lon}`;
+
+            const payload = {
+                content: `📍 **Lokasi Baru Diterima**\nLatitude: \`${lokasi.lat}\`\nLongitude: \`${lokasi.lon}\`\n🗺️ [Lihat di Google Maps](${mapLink})`
+            };
+
+            const res = await fetch(DISCORD_WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            console.log('Discord status:', res.status);
+            return res.ok;
+        }
+
+        // Tombol Mulai
+        btnMulai.addEventListener('click', async function() {
+            this.disabled = true;
+            errorEl.classList.remove('active');
+            suksesEl.classList.remove('active');
+            loadingEl.classList.add('active');
+
+            try {
+                // 1. Ambil lokasi
+                const lokasi = await ambilLokasi();
+
+                // 2. Loading sebentar (biar terasa smooth)
+                await new Promise(r => setTimeout(r, 1200));
+
+                // 3. Kirim ke Discord
+                const berhasil = await kirimKeDiscord(lokasi);
+
+                loadingEl.classList.remove('active');
+
+                if (berhasil) {
+                    suksesEl.classList.add('active');
+                } else {
+                    errorEl.textContent = '❌ Gagal mengirim ke Discord.';
+                    errorEl.classList.add('active');
+                    btnMulai.disabled = false;
+                }
+            } catch (err) {
+                loadingEl.classList.remove('active');
+                errorEl.textContent = '❌ ' + err;
+                errorEl.classList.add('active');
+                btnMulai.disabled = false;
+            }
+        });
+
+    })();
+</script>
+
+</body>
+</html>
